@@ -312,7 +312,15 @@ function Grant-CPermission
         # We don't use Get-Acl because it returns the whole security descriptor, which includes owner information.
         # When passed to Set-Acl, this causes intermittent errors.  So, we just grab the ACL portion of the security descriptor.
         # See http://www.bilalaslam.com/2010/12/14/powershell-workaround-for-the-security-identifier-is-not-allowed-to-be-the-owner-of-this-object-with-set-acl/
-        $currentAcl = (Get-Item $Path -Force).GetAccessControl("Access")
+        $item = Get-Item -Path $Path -Force
+        if( ($item | Get-Member 'GetAccessControl') )
+        {
+            $currentAcl = $item.GetAccessControl("Access")
+        }
+        else
+        {
+            $currentAcl = [IO.FileSystemAclExtensions]::GetAccessControl($_, 'Access')
+        }
     
         $inheritanceFlags = [Security.AccessControl.InheritanceFlags]::None
         $propagationFlags = [Security.AccessControl.PropagationFlags]::None

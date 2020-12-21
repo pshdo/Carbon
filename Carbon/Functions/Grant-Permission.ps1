@@ -1,4 +1,3 @@
-
 function Grant-CPermission
 {
     <#
@@ -258,6 +257,44 @@ function Grant-CPermission
                     return
                 }
 
+                if( -not ($certificate.PrivateKey | Get-Member 'CspKeyContainerInfo') )
+                {
+                    $privateKeyFileName = $certificate.PrivateKey.Key.UniqueName
+                    # See https://docs.microsoft.com/en-us/windows/win32/seccng/key-storage-and-retrieval
+                    $keyStoragePaths =         @(
+                        "$($env:AppDATA)\Microsoft\Crypto", 
+                        "$($env:ALLUSERSPROFILE)\Application Data\Microsoft\Crypto\SystemKeys", 
+                        "$($env:WINDIR)\ServiceProfiles\LocalService\AppData\Roaming\Microsoft\Crypto\Keys", 
+                        "$($env:WINDIR)\ServiceProfiles\NetworkService\AppData\Roaming\Microsoft\Crypto\Keys", 
+                        "$($env:ALLUSERSPROFILE)\Application Data\Microsoft\Crypto",
+                        "$($env:ALLUSERSPROFILE)\Microsoft\Crypto"
+                    )
+
+                    $privateKeyFiles = $keyStoragePaths | Get-ChildItem -Recurse -Force -ErrorAction Ignore -Filter $privateKeyFileName
+                    if( -not $privateKeyFiles )
+                    {
+                        $msg = "Failed to find the private key file for certificate ""$($Path)"" (subject: $($certificate.Subject); " +
+                                "thumbprint: $($certificate.Thumbprint); expected file name: $($privateKeyFileName)). This is most " +
+                                "likely because you don't have permission to read private keys, or we''re not looking in the right " +
+                                "places. According to <a href='https://docs.microsoft.com/en-us/windows/win32/seccng/key-storage-and-retrieval' target='_blank' rel='noreferrer'>Microsoft docs</a>, " +
+                                "private keys are stored under one of these directories:" + [Environment]::NewLine +
+                                " * $($keyStoragePaths -join "$([Environment]::NewLine) * ")" + [Environment]::NewLine +
+                                "If there are other locations we should be looking, please " +
+                                "<a href='https://github.com/webmd-health-services/Carbon/issues' target='_blank' rel='noreferrer'>submit an issue/bug report</a>."
+                        Write-Error -Message $msg
+                        return
+                    }
+                
+                    $grantPermissionParams = [Collections.Generic.Dictionary[[string], [object]]]::New($PSBoundParameters)
+                    $grantPermissionParams.Remove('Path')
+
+                    foreach( $privateKeyFile in $privateKeyFiles )
+                    {
+                        Grant-CPermission -Path $privateKeyFile.FullName @grantPermissionParams
+                    }
+                    return
+                }
+
                 [Security.AccessControl.CryptoKeySecurity]$keySecurity = $certificate.PrivateKey.CspKeyContainerInfo.CryptoKeySecurity
                 if( -not $keySecurity )
                 {
@@ -319,7 +356,7 @@ function Grant-CPermission
         }
         else
         {
-            $currentAcl = [IO.FileSystemAclExtensions]::GetAccessControl($_, 'Access')
+            $currentAcl = [IO.FileSystemAclExtensions]::GetAccessControl($item, 'Access')
         }
     
         $inheritanceFlags = [Security.AccessControl.InheritanceFlags]::None

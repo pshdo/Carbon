@@ -105,7 +105,14 @@ function Get-CPermission
                 }
                 else
                 {
-                    $_.GetAccessControl([Security.AccessControl.AccessControlSections]::Access)
+                    if( ($_ | Get-Member 'GetAccessControl') )
+                    {
+                        $_.GetAccessControl('Access')
+                    }
+                    else
+                    {
+                        [IO.FileSystemAclExtensions]::GetAccessControl($_, 'Access')
+                    }
                 }
             }
         } |
